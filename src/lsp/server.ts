@@ -12,6 +12,7 @@ import { getSonarLintConfiguration } from '../settings/settings';
 import { RequirementsData } from '../util/requirements';
 import * as util from '../util/util';
 import { maybeAddCFamilyJar } from '../cfamily/ondemand';
+import { getProxyJavaArgs } from '../util/proxy';
 
 declare let v8debug: object;
 const DEBUG = typeof v8debug === 'object' || util.startedInDebugMode(process);
@@ -36,6 +37,17 @@ export async function languageServerCommand(
   if (sonarLintConfiguration.get('startFlightRecorder', false)) {
     params.push('-Dsonarlint.flightrecorder.enabled=true');
   }
+
+  // Inject proxy configuration if not already specified by user
+  const proxyArgs = getProxyJavaArgs();
+  proxyArgs.forEach(proxyArg => {
+    // Only add proxy arg if user hasn't already specified it in ls.vmargs
+    const proxyProperty = proxyArg.split('=')[0]; // e.g., '-Dhttp.proxyHost'
+    const alreadySet = params.some(param => param.startsWith(proxyProperty));
+    if (!alreadySet) {
+      params.push(proxyArg);
+    }
+  });
 
   params.push('-jar', serverJar);
   params.push('-stdio');

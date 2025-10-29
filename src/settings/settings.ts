@@ -37,25 +37,45 @@ export function getCurrentConfiguration() {
 
 export function onConfigurationChange() {
   return vscode.workspace.onDidChangeConfiguration(event => {
-    if (!event.affectsConfiguration('sonarlint')) {
+    const sonarLintConfigChanged = event.affectsConfiguration('sonarlint');
+    const proxyConfigChanged = event.affectsConfiguration('http.proxy') ||
+                               event.affectsConfiguration('http.proxySupport') ||
+                               event.affectsConfiguration('http.proxyStrictSSL');
+
+    if (!sonarLintConfigChanged && !proxyConfigChanged) {
       return;
     }
-    const newConfig = getSonarLintConfiguration();
 
-    const sonarLintLsConfigChanged = hasSonarLintLsConfigChanged(currentConfig, newConfig);
-
-    if (sonarLintLsConfigChanged) {
-      const msg = 'SonarLint Language Server configuration changed, please restart VS Code.';
+    if (proxyConfigChanged) {
+      const msg = 'Proxy configuration changed. SonarLint Language Server needs to restart for changes to take effect.';
       const action = 'Restart Now';
       const restartId = 'workbench.action.reloadWindow';
-      currentConfig = newConfig;
       vscode.window.showWarningMessage(msg, action).then(selection => {
         if (action === selection) {
           vscode.commands.executeCommand(restartId);
         }
       });
+      return;
     }
-    migrateConnectedModeSettings(newConfig, ConnectionSettingsService.instance);
+
+    if (sonarLintConfigChanged) {
+      const newConfig = getSonarLintConfiguration();
+
+      const sonarLintLsConfigChanged = hasSonarLintLsConfigChanged(currentConfig, newConfig);
+
+      if (sonarLintLsConfigChanged) {
+        const msg = 'SonarLint Language Server configuration changed, please restart VS Code.';
+        const action = 'Restart Now';
+        const restartId = 'workbench.action.reloadWindow';
+        currentConfig = newConfig;
+        vscode.window.showWarningMessage(msg, action).then(selection => {
+          if (action === selection) {
+            vscode.commands.executeCommand(restartId);
+          }
+        });
+      }
+      migrateConnectedModeSettings(newConfig, ConnectionSettingsService.instance);
+    }
   });
 }
 

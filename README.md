@@ -24,6 +24,65 @@ Watch the [SonarQube for IDE: VSCode Overview](https://www.youtube.com/watch?v=m
 
 <a href='https://www.youtube.com/watch?v=m8sAdYCIWhY' target='_blank'><img alt='SonarLint for VSCode Overview video' src='images/sonarlint_overview.png'></a>
 
+## Proxy Configuration
+
+SonarQube for IDE respects VS Code's proxy settings for all network operations, including:
+- Connections to SonarQube Server and SonarQube Cloud
+- JRE downloads during initial setup
+- Language analyzer updates
+
+### Configuring Proxy Settings
+
+To configure proxy support, set the following VS Code settings (File > Preferences > Settings):
+
+**Basic HTTP/HTTPS Proxy:**
+```json
+{
+  "http.proxy": "http://proxy.example.com:8080",
+  "http.proxyStrictSSL": true
+}
+```
+
+**Proxy with Authentication:**
+```json
+{
+  "http.proxy": "http://username:password@proxy.example.com:8080"
+}
+```
+
+**SOCKS Proxy:**
+```json
+{
+  "http.proxy": "socks5://proxy.example.com:1080"
+}
+```
+
+**Bypass Proxy for Specific Hosts:**
+```json
+{
+  "http.noProxy": ["localhost", "127.0.0.1", "*.internal.com"]
+}
+```
+
+**Disable Proxy:**
+```json
+{
+  "http.proxySupport": "off"
+}
+```
+
+### Supported Proxy Protocols
+
+- **HTTP/HTTPS**: Standard corporate proxies
+- **SOCKS/SOCKS4/SOCKS5**: SOCKS proxies with optional authentication
+
+### Notes
+
+- After changing proxy settings, VS Code will prompt you to restart for changes to take effect
+- The extension uses proxy settings for both the TypeScript/Node.js layer and the Java Language Server
+- Proxy authentication credentials in URLs will be properly encoded
+- For corporate environments with NTLM/Kerberos authentication, consult your IT department for the correct proxy URL format
+
 ## Contributions
 
 Have a need in SonarQube for IDE: VS Code that’s not being met? Or not being met well? Ever wish you could talk directly to the Product Manager? Well now’s your chance! Congratulations, you are SonarQube's Product Manager for a day. If you would like to see a new feature, please create a new thread in the Community Forum here, under ["Product Manager for a Day"](https://community.sonarsource.com/c/sl/pm-for-a-day-sl/41). 

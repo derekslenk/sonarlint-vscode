@@ -9,6 +9,7 @@ import * as followRedirects from 'follow-redirects';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as inly from 'inly';
+import { getProxyAgent } from '../util/proxy';
 
 const https = followRedirects.https;
 
@@ -82,8 +83,15 @@ export function download(options: Options, destinationDir: string): Promise<Down
     const extension = options.os === 'windows' ? 'zip' : 'tgz';
     const jreZipPath = path.join(destinationDir, `jre.${extension}`);
 
+    // Configure proxy agent if proxy settings are configured
+    const proxyAgent = getProxyAgent();
+    const requestOptions: any = {};
+    if (proxyAgent) {
+      requestOptions.agent = proxyAgent;
+    }
+
     https
-      .get(fileToDownload, res => {
+      .get(fileToDownload, requestOptions, res => {
         const fileToSave = fs.createWriteStream(jreZipPath);
         res.pipe(fileToSave);
         fileToSave.on('finish', () => {
@@ -92,8 +100,20 @@ export function download(options: Options, destinationDir: string): Promise<Down
         });
       })
       .on('error', err => {
-        fs.unlinkSync(jreZipPath);
-        reject(err);
+        // Handle proxy authentication failures and connection errors
+        if (err.message && err.message.includes('Proxy')) {
+          const proxyError = new Error(
+            `Failed to download JRE through proxy: ${err.message}. ` +
+            'Please check your proxy configuration in VS Code settings (http.proxy, http.proxyAuthorization).'
+          );
+          reject(proxyError);
+        } else {
+          reject(err);
+        }
+        // Cleanup incomplete download
+        if (fs.existsSync(jreZipPath)) {
+          fs.unlinkSync(jreZipPath);
+        }
       });
   });
 }
