@@ -73,14 +73,17 @@ To configure proxy support, set the following VS Code settings (File > Preferenc
 
 ### Supported Proxy Protocols
 
-- **HTTP/HTTPS**: Standard corporate proxies
-- **SOCKS/SOCKS4/SOCKS5**: SOCKS proxies with optional authentication
+- **HTTP/HTTPS**: Fully supported for all network operations (Node.js and Java layers)
+- **SOCKS/SOCKS4/SOCKS5**: Supported for Java Language Server connections only
+  - **Note**: The Node.js/TypeScript layer (JRE downloads, extension updates) does not support SOCKS proxies
+  - SOCKS proxies will work for SonarQube Server/Cloud connections through the Java Language Server
+  - For full SOCKS support, consider using an HTTP/HTTPS proxy that forwards to your SOCKS proxy
 
 ### Notes
 
 - After changing proxy settings, VS Code will prompt you to restart for changes to take effect
 - The extension uses proxy settings for both the TypeScript/Node.js layer and the Java Language Server
-- Proxy authentication credentials in URLs will be properly encoded
+- Proxy authentication credentials are passed securely via environment variables (not visible in process listings)
 - For corporate environments with NTLM/Kerberos authentication, consult your IT department for the correct proxy URL format
 
 ## Contributions

@@ -12,7 +12,7 @@ import { getSonarLintConfiguration } from '../settings/settings';
 import { RequirementsData } from '../util/requirements';
 import * as util from '../util/util';
 import { maybeAddCFamilyJar } from '../cfamily/ondemand';
-import { getProxyJavaArgs } from '../util/proxy';
+import { getProxyConfig, getProxyJavaArgs, getProxyJavaEnv } from '../util/proxy';
 
 declare let v8debug: object;
 const DEBUG = typeof v8debug === 'object' || util.startedInDebugMode(process);
@@ -38,8 +38,11 @@ export async function languageServerCommand(
     params.push('-Dsonarlint.flightrecorder.enabled=true');
   }
 
+  // Get proxy configuration once to avoid duplicate calls
+  const proxyConfig = getProxyConfig();
+
   // Inject proxy configuration if not already specified by user
-  const proxyArgs = getProxyJavaArgs();
+  const proxyArgs = getProxyJavaArgs(proxyConfig);
   proxyArgs.forEach(proxyArg => {
     // Only add proxy arg if user hasn't already specified it in ls.vmargs
     const proxyProperty = proxyArg.split('=')[0]; // e.g., '-Dhttp.proxyHost'
@@ -65,7 +68,17 @@ export async function languageServerCommand(
   params.push(Path.resolve(context.extensionPath, 'analyzers', 'sonarlintomnisharp.jar'));
   await maybeAddCFamilyJar(params);
 
-  return { command: javaExecutablePath, args: params, transport: TransportKind.stdio };
+  // Get proxy credentials as environment variables (hidden from process list)
+  const proxyEnv = getProxyJavaEnv(proxyConfig);
+
+  return {
+    command: javaExecutablePath,
+    args: params,
+    transport: TransportKind.stdio,
+    options: {
+      env: { ...process.env, ...proxyEnv }
+    }
+  };
 }
 
 export function parseVMargs(params: string[], vmargsLine: string) {

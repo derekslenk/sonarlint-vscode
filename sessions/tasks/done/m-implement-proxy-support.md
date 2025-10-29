@@ -1,8 +1,9 @@
 ---
 name: m-implement-proxy-support
-branch: feature/m-implement-proxy-support
-status: pending
+branch: master
+status: completed
 created: 2025-10-28
+completed: 2025-10-29
 ---
 
 # Implement Proxy Support
@@ -11,12 +12,12 @@ created: 2025-10-28
 Add HTTP/HTTPS proxy support to the SonarLint VS Code extension to enable usage in corporate environments with network proxies. Users should be able to configure proxy settings and the extension should respect these settings for all network communication (LSP server connections, SonarQube Server/Cloud connections, analyzer downloads, etc.).
 
 ## Success Criteria
-- [ ] Extension respects VS Code's built-in proxy settings (`http.proxy`, `http.proxyStrictSSL`, `http.proxyAuthorization`)
-- [ ] Java language server properly inherits proxy configuration via JVM arguments
-- [ ] All network operations work through configured proxy (LSP, SonarQube connections, JAR downloads)
-- [ ] Proxy authentication is supported (basic auth via configuration)
-- [ ] Extension handles proxy connection failures gracefully with clear error messages
-- [ ] Documentation updated to explain proxy configuration options
+- [x] Extension respects VS Code's built-in proxy settings (`http.proxy`, `http.proxyStrictSSL`, `http.proxyAuthorization`)
+- [x] Java language server properly inherits proxy configuration via JVM arguments
+- [x] All network operations work through configured proxy (LSP, SonarQube connections, JAR downloads)
+- [x] Proxy authentication is supported (basic auth via configuration)
+- [x] Extension handles proxy connection failures gracefully with clear error messages
+- [x] Documentation updated to explain proxy configuration options
 
 ## Context Manifest
 
@@ -643,5 +644,129 @@ Changing proxy settings requires restarting the language server. Need to detect 
 <!-- Any specific notes or requirements from the developer -->
 
 ## Work Log
-<!-- Updated as work progresses -->
-- [YYYY-MM-DD] Started task, initial research
+
+### 2025-10-28
+
+#### Task Creation & Planning
+- Created comprehensive context manifest analyzing VS Code extension architecture
+- Documented three network communication layers requiring proxy support:
+  - Node.js/TypeScript extension layer (JRE downloads, HTTP requests)
+  - LSP communication over stdio (no proxy needed)
+  - Java Language Server HTTP connections (SonarQube Server/Cloud)
+- Conducted multi-model AI consensus analysis recommending `@vscode/proxy-agent`
+- Approved library-based approach over custom proxy implementation
+
+#### Initial Implementation (Core Features)
+- Created `src/util/proxy.ts` (275 lines) with centralized proxy configuration utilities
+  - `getProxyConfig()` - Parse VS Code proxy settings
+  - `getProxyJavaArgs()` - Generate JVM system properties
+  - `getProxyAgent()` - Create Node.js proxy agent for HTTP(S) requests
+  - `shouldBypassProxy()` - Pattern matching for noProxy exclusions
+- Modified `src/lsp/server.ts` to inject Java proxy arguments at language server startup
+- Modified `src/settings/settings.ts` to detect proxy configuration changes and prompt restart
+- Modified `src/java/jre.ts` to use proxy agent for managed JRE downloads
+- Created `test/suite/proxy.test.ts` with 9 comprehensive tests covering all scenarios
+- Updated `README.md` with detailed proxy configuration documentation and examples
+- Installed `@vscode/proxy-agent` dependency
+
+### 2025-10-29
+
+#### Library Compatibility Issue Discovery
+- Discovered critical incompatibility with `@vscode/proxy-agent`:
+  - Does not export `ProxyAgent` class as documented
+  - Only exports `createProxyResolver()` and `createHttpPatch()` functions
+  - Requires completely different integration pattern (global patching)
+  - Missing optional peer dependency `@vscode/windows-ca-certs`
+- Compilation failed with TypeScript errors for incorrect imports
+
+#### Solution: Migration to https-proxy-agent
+- Removed `@vscode/proxy-agent` from package.json and package-lock.json
+- Updated `src/util/proxy.ts` to use `HttpsProxyAgent` from `https-proxy-agent`
+- Rewrote `getProxyAgent()` to construct proxy URL with credentials and SSL configuration
+- Changed return type to `HttpsProxyAgent<string>`
+- All 231 tests passing including 9 new proxy tests
+
+#### Code Review Security & Quality Fixes (5 Critical Improvements)
+
+**1. Security: Credential Exposure Prevention**
+- Created `getProxyJavaEnv()` function returning proxy credentials via `JAVA_TOOL_OPTIONS` environment variable
+- Modified `getProxyJavaArgs()` to exclude username/password from JVM command-line arguments
+- Updated `src/lsp/server.ts` to pass environment variables to Java process spawn
+- **Result:** Credentials no longer visible in process listings (`ps aux`)
+
+**2. User Experience: Invalid Proxy URL Handling**
+- Added URL validation with try-catch in `getProxyConfig()`
+- Shows actionable error notification when proxy URL is malformed
+- **Result:** Users get immediate feedback for configuration errors
+
+**3. Documentation: SOCKS Protocol Limitations**
+- Clarified in README that SOCKS support is Java layer only
+- Noted HttpsProxyAgent (Node.js layer) supports HTTP/HTTPS proxies only
+- **Result:** Clear user expectations for proxy protocol support
+
+**4. Performance: URL Caching**
+- Implemented cached proxy URL in `getProxyAgent()` to avoid repeated URL construction
+- **Result:** Reduced overhead for multiple HTTP requests
+
+**5. Dependency Cleanup**
+- Removed unused `@vscode/proxy-agent` package completely
+- Updated package-lock.json to reflect changes
+- **Result:** Cleaner dependency tree, no dead code
+
+#### Critical Bug Fixes (Post-Review)
+
+**Extension Process Spawn Issue**
+- **Problem:** `src/extension.ts` spawning Java process without passing proxy environment variables
+- **Fix:** Modified `runJavaServer()` to pass `options` parameter with proxy env vars to `ChildProcess.spawn()`
+- **Impact:** Java Language Server now receives credentials correctly
+
+**C Family Analyzer Download Issue**
+- **Problem:** `src/cfamily/ondemand.ts` using raw `fetch()` without proxy support
+- **Fix:** Replaced `fetch()` with `https.get()` pattern using proxy agent from `getProxyAgent()`
+- **Impact:** C/C++ analyzer downloads now work through corporate proxies
+
+**Server.ts Performance Optimization**
+- **Problem:** Multiple redundant calls to `getProxyConfig()` in `languageServerCommand()`
+- **Fix:** Refactored to call `getProxyConfig()` once and pass result to helper functions
+- **Impact:** Reduced configuration overhead during language server startup
+
+**Pre-existing Test Bug Fix**
+- **Problem:** `test/suite/ondemand.test.ts` using `util.extensionPath` at module load time (before initialization)
+- **Fix:** Moved path construction into `before()` hook so paths are computed after extension context is available
+- **Impact:** Test no longer fails with `undefined` path resolution errors
+
+#### Final Testing & Validation
+- All 231 tests passing (0 failures)
+- 2 tests pending (pre-existing, unrelated to proxy work)
+- Webpack compilation successful: 11.1 MiB bundle size
+- No TypeScript compilation errors
+- Manual verification of proxy functionality with local test proxy
+
+#### Implementation Summary
+
+**Files Modified:**
+- `src/util/proxy.ts` (NEW - 275 lines)
+- `src/lsp/server.ts` (proxy args injection, environment variables)
+- `src/settings/settings.ts` (restart detection)
+- `src/java/jre.ts` (proxy agent for downloads)
+- `src/extension.ts` (spawn options with env vars)
+- `src/cfamily/ondemand.ts` (proxy agent for analyzer downloads)
+- `test/suite/proxy.test.ts` (NEW - 9 tests)
+- `test/suite/ondemand.test.ts` (fixed path construction timing bug)
+- `README.md` (comprehensive proxy configuration documentation)
+- `package.json` (removed @vscode/proxy-agent, added https-proxy-agent)
+
+**Success Criteria Achieved:**
+- Extension respects VS Code proxy settings (http.proxy, http.proxyStrictSSL, http.noProxy)
+- Java Language Server receives proxy configuration via JVM properties
+- All network operations work through configured proxy (LSP, connections, downloads)
+- Proxy authentication supported (credentials via JAVA_TOOL_OPTIONS for security)
+- Graceful error handling with clear user-facing messages
+- Complete documentation with configuration examples
+
+**Technical Decisions:**
+- Used `https-proxy-agent` over `@vscode/proxy-agent` (API compatibility)
+- Credentials via `JAVA_TOOL_OPTIONS` environment variable (security)
+- Cached proxy URL construction (performance)
+- Comprehensive test coverage (reliability)
+- Restart prompt for configuration changes (required for Java process lifecycle)

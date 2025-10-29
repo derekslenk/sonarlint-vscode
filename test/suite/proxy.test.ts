@@ -7,7 +7,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { getProxyConfig, getProxyJavaArgs, shouldBypassProxy } from '../../src/util/proxy';
+import { getProxyConfig, getProxyJavaArgs, getProxyJavaEnv, shouldBypassProxy } from '../../src/util/proxy';
 
 suite('Proxy Utility Tests', () => {
   suite('getProxyConfig', () => {
@@ -104,12 +104,18 @@ suite('Proxy Utility Tests', () => {
       try {
         await httpConfig.update('proxy', 'http://user:pass@proxy.example.com:8080', vscode.ConfigurationTarget.Global);
         const args = getProxyJavaArgs();
+        const env = getProxyJavaEnv();
 
-        // Should include auth properties
-        assert.ok(args.includes('-Dhttp.proxyUser=user'));
-        assert.ok(args.includes('-Dhttp.proxyPassword=pass'));
-        assert.ok(args.includes('-Dhttps.proxyUser=user'));
-        assert.ok(args.includes('-Dhttps.proxyPassword=pass'));
+        // Credentials should NOT be in args (security - avoids process listing exposure)
+        assert.ok(!args.some(arg => arg.includes('proxyUser')));
+        assert.ok(!args.some(arg => arg.includes('proxyPassword')));
+
+        // Credentials should be in environment variables via JAVA_TOOL_OPTIONS
+        assert.ok(env.JAVA_TOOL_OPTIONS);
+        assert.ok(env.JAVA_TOOL_OPTIONS.includes('-Dhttp.proxyUser=user'));
+        assert.ok(env.JAVA_TOOL_OPTIONS.includes('-Dhttp.proxyPassword=pass'));
+        assert.ok(env.JAVA_TOOL_OPTIONS.includes('-Dhttps.proxyUser=user'));
+        assert.ok(env.JAVA_TOOL_OPTIONS.includes('-Dhttps.proxyPassword=pass'));
       } finally {
         await httpConfig.update('proxy', originalProxy, vscode.ConfigurationTarget.Global);
       }

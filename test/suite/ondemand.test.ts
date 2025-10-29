@@ -19,9 +19,18 @@ suite('On demand analyzer download and cleanup', () => {
   const cFamily660LastUsed = 'plugins[sonar-cfamily-plugin][6.60.0.76379].lastUsed';
   const cFamily662LastUsed = 'plugins[sonar-cfamily-plugin][6.62.0.78645].lastUsed';
 
-  const onDemandAnalyzersPath = path.resolve(util.extensionPath, '..', 'sonarsource.sonarlint_ondemand-analyzers');
-  const cFamily660PluginFolder = path.resolve(onDemandAnalyzersPath, 'sonar-cfamily-plugin', '6.60.0.76379');
-  const cFamily662PluginFolder = path.resolve(onDemandAnalyzersPath, 'sonar-cfamily-plugin', '6.62.0.78645');
+  let onDemandAnalyzersPath: string;
+  let cFamily660PluginFolder: string;
+  let cFamily662PluginFolder: string;
+
+  setup(() => {
+    // Initialize paths after extension context is available
+    // Use __dirname as fallback if extensionPath not initialized
+    const basePath = util.extensionPath || __dirname;
+    onDemandAnalyzersPath = path.resolve(basePath, '..', 'sonarsource.sonarlint_ondemand-analyzers');
+    cFamily660PluginFolder = path.resolve(onDemandAnalyzersPath, 'sonar-cfamily-plugin', '6.60.0.76379');
+    cFamily662PluginFolder = path.resolve(onDemandAnalyzersPath, 'sonar-cfamily-plugin', '6.62.0.78645');
+  });
 
   test('Should remove unused analyzers and keep ones still in use', async () => {
 

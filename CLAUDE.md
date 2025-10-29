@@ -43,6 +43,13 @@ SonarQube for IDE (formerly SonarLint) is a VS Code extension that provides real
 - Rule configuration for AI agents
 - Enables Claude Code and other AI agents to use SonarQube data
 
+**Proxy Configuration** (`src/util/proxy.ts`)
+- Centralized proxy configuration utilities for corporate network environments
+- Reads VS Code's `http.proxy`, `http.proxyStrictSSL`, `http.noProxy` settings
+- Provides proxy agent for Node.js/TypeScript network operations
+- Generates Java system properties for Language Server proxy support
+- Secure credential handling via environment variables
+
 ### Build System
 
 The extension uses **webpack** for bundling TypeScript code:
@@ -160,6 +167,81 @@ The Java language server (`sonarlint-ls.jar`) runs as a separate process:
 - Handles file analysis, rule management, and connection to remote servers
 - Supports custom VM arguments via `sonarlint.ls.vmargs` setting
 
+## Proxy Support
+
+The extension provides comprehensive proxy support for corporate network environments, operating at two layers:
+
+### Architecture
+
+**Dual-Layer Proxy Configuration:**
+- **Node.js/TypeScript Layer**: Handles extension-level network operations (JRE downloads, C/C++ analyzer downloads)
+- **Java Language Server Layer**: Handles language server network operations (SonarQube Server/Cloud connections, analyzer updates)
+
+**Configuration Flow:**
+1. Extension reads VS Code settings: `http.proxy`, `http.proxyStrictSSL`, `http.noProxy`, `http.proxySupport`
+2. `src/util/proxy.ts` parses and validates proxy URL
+3. For Node.js operations: Creates `HttpsProxyAgent` instance
+4. For Java operations: Generates JVM system properties (`-Dhttp.proxyHost`, etc.)
+5. Credentials passed securely via `JAVA_TOOL_OPTIONS` environment variable
+
+### Integration Points
+
+**Language Server Startup** (`src/lsp/server.ts`, lines 20-82):
+- Calls `getProxyConfig()` to read VS Code settings
+- Injects proxy JVM arguments via `getProxyJavaArgs()` (non-sensitive properties)
+- Passes proxy credentials via `getProxyJavaEnv()` in environment variables
+- Avoids duplicating user-specified proxy settings in `sonarlint.ls.vmargs`
+
+**Extension Initialization** (`src/extension.ts`, lines 116-139):
+- `runJavaServer()` function spawns Java process with proxy environment variables
+- Ensures child process inherits proxy configuration from extension
+
+**JRE Downloads** (`src/java/jre.ts`, lines 72-119):
+- `download()` function uses `getProxyAgent()` for HTTPS requests
+- Proxy agent handles authentication and SSL verification
+- Enhanced error messages for proxy authentication failures
+
+**C/C++ Analyzer Downloads** (`src/cfamily/ondemand.ts`, lines 44-139):
+- `startDownloadAsync()` uses `getProxyAgent()` for analyzer JAR downloads
+- Supports cancellation and progress reporting through proxy
+- User-friendly error messages for proxy issues
+
+### Security Considerations
+
+**Credential Protection:**
+- Proxy credentials are **never** passed as JVM command-line arguments
+- Credentials are passed via `JAVA_TOOL_OPTIONS` environment variable to prevent exposure in process listings
+- Node.js proxy agent handles credentials internally without logging
+
+**Configuration Validation:**
+- Invalid proxy URLs trigger user-friendly error notifications with link to settings
+- Parsing errors are caught and logged without crashing the extension
+
+### Protocol Support
+
+**HTTP/HTTPS Proxies:**
+- Fully supported in both Node.js and Java layers
+- Default protocol when not specified
+- Handles both HTTP and HTTPS target URLs
+
+**SOCKS Proxies (SOCKS/SOCKS4/SOCKS5):**
+- Supported in Java Language Server layer (via JVM system properties)
+- **Not supported** in Node.js layer (JRE downloads, extension operations)
+- Users needing full SOCKS support should use an HTTP proxy that forwards to SOCKS
+
+**NoProxy Configuration:**
+- VS Code setting: Array of patterns (e.g., `["*.internal.com", "localhost"]`)
+- Converted to Java format: Pipe-separated string (e.g., `*.internal.com|localhost`)
+- Supports wildcards: `*.example.com`, `.example.com`, exact matches
+
+### Testing Proxy Configuration
+
+To verify proxy configuration is working:
+1. Set `http.proxy` in VS Code settings
+2. Enable verbose logging: `sonarlint.output.showVerboseLogs`
+3. Check SonarQube for IDE Output channel for proxy-related log messages
+4. Test connection to SonarQube Server/Cloud in Connected Mode view
+
 ## External Dependencies
 
 **Runtime Requirements:**
@@ -168,6 +250,7 @@ The Java language server (`sonarlint-ls.jar`) runs as a separate process:
 
 **Key npm Dependencies:**
 - `vscode-languageclient`: LSP client library
+- `https-proxy-agent`: Proxy support for Node.js HTTPS requests
 - `openpgp`: Signature verification for C/C++ analyzer
 - `@sentry/node`: Error monitoring
 - Various utilities: diff, tar, luxon, globby

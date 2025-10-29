@@ -19,6 +19,7 @@ export interface ProxyConfig {
   password?: string;
   noProxy?: string[];
   strictSSL?: boolean;
+  proxyUrl?: string; // Original proxy URL for reuse
 }
 
 /**
@@ -48,7 +49,8 @@ export function getProxyConfig(): ProxyConfig | null {
       host: parsed.hostname,
       port: parsed.port ? parseInt(parsed.port, 10) : getDefaultPort(parsed.protocol),
       protocol: normalizeProtocol(parsed.protocol),
-      strictSSL: httpConfig.get<boolean>('proxyStrictSSL', true)
+      strictSSL: httpConfig.get<boolean>('proxyStrictSSL', true),
+      proxyUrl: proxyUrl // Cache original URL
     };
 
     // Extract credentials from URL if present
@@ -68,6 +70,18 @@ export function getProxyConfig(): ProxyConfig | null {
     return config;
   } catch (error) {
     console.error('Failed to parse proxy URL:', error);
+
+    // Show user-friendly error notification
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(
+      `Invalid proxy URL configuration: ${errorMsg}. Please check your http.proxy setting.`,
+      'Open Settings'
+    ).then(selection => {
+      if (selection === 'Open Settings') {
+        vscode.commands.executeCommand('workbench.action.openSettings', 'http.proxy');
+      }
+    });
+
     return { enabled: false };
   }
 }
@@ -97,15 +111,19 @@ function normalizeProtocol(protocol: string): 'http' | 'https' | 'socks' | 'sock
 }
 
 /**
- * Generates Java system property arguments for proxy configuration.
+ * Generates Java system property arguments for proxy configuration (non-sensitive properties only).
  * Returns array of JVM arguments like ['-Dhttp.proxyHost=...', '-Dhttp.proxyPort=...', etc.]
  *
- * Handles both HTTP and HTTPS proxy properties, authentication, and noProxy conversion.
+ * Credentials are NOT included here - use getProxyJavaEnv() to get them as environment variables
+ * to avoid exposing them in process listings.
  *
- * @returns Array of JVM argument strings
+ * @param config Optional ProxyConfig object. If not provided, will call getProxyConfig()
+ * @returns Array of JVM argument strings (without credentials)
  */
-export function getProxyJavaArgs(): string[] {
-  const config = getProxyConfig();
+export function getProxyJavaArgs(config?: ProxyConfig | null): string[] {
+  if (!config) {
+    config = getProxyConfig();
+  }
   if (!config || !config.enabled || !config.host) {
     return [];
   }
@@ -122,18 +140,6 @@ export function getProxyJavaArgs(): string[] {
     args.push(`-Dhttps.proxyHost=${config.host}`);
     args.push(`-Dhttps.proxyPort=${config.port}`);
 
-    // Authentication (if provided)
-    // Note: This exposes credentials in process list. Consider using JAVA_TOOL_OPTIONS env var instead.
-    if (config.username) {
-      args.push(`-Dhttp.proxyUser=${config.username}`);
-      args.push(`-Dhttps.proxyUser=${config.username}`);
-    }
-    if (config.password) {
-      // WARNING: Password visible in ps output
-      args.push(`-Dhttp.proxyPassword=${config.password}`);
-      args.push(`-Dhttps.proxyPassword=${config.password}`);
-    }
-
     // NoProxy conversion: VS Code uses array, Java uses pipe-separated string
     if (config.noProxy && config.noProxy.length > 0) {
       const javaNoProxy = config.noProxy.join('|');
@@ -143,16 +149,56 @@ export function getProxyJavaArgs(): string[] {
     // SOCKS proxy properties
     args.push(`-DsocksProxyHost=${config.host}`);
     args.push(`-DsocksProxyPort=${config.port}`);
-
-    if (config.username) {
-      args.push(`-Djava.net.socks.username=${config.username}`);
-    }
-    if (config.password) {
-      args.push(`-Djava.net.socks.password=${config.password}`);
-    }
   }
 
   return args;
+}
+
+/**
+ * Generates environment variables for Java proxy authentication credentials.
+ * Uses JAVA_TOOL_OPTIONS to pass credentials securely without exposing them in process listings.
+ *
+ * @param config Optional ProxyConfig object. If not provided, will call getProxyConfig()
+ * @returns Record of environment variable names to values, or empty object if no credentials
+ */
+export function getProxyJavaEnv(config?: ProxyConfig | null): Record<string, string> {
+  if (!config) {
+    config = getProxyConfig();
+  }
+  if (!config || !config.enabled || !config.username) {
+    return {};
+  }
+
+  const javaToolOptions: string[] = [];
+
+  if (config.protocol === 'http' || config.protocol === 'https') {
+    // HTTP/HTTPS proxy authentication via JAVA_TOOL_OPTIONS
+    if (config.username) {
+      javaToolOptions.push(`-Dhttp.proxyUser=${config.username}`);
+      javaToolOptions.push(`-Dhttps.proxyUser=${config.username}`);
+    }
+    if (config.password) {
+      javaToolOptions.push(`-Dhttp.proxyPassword=${config.password}`);
+      javaToolOptions.push(`-Dhttps.proxyPassword=${config.password}`);
+    }
+  } else if (config.protocol === 'socks' || config.protocol === 'socks4' || config.protocol === 'socks5') {
+    // SOCKS proxy authentication via JAVA_TOOL_OPTIONS
+    if (config.username) {
+      javaToolOptions.push(`-Djava.net.socks.username=${config.username}`);
+    }
+    if (config.password) {
+      javaToolOptions.push(`-Djava.net.socks.password=${config.password}`);
+    }
+  }
+
+  if (javaToolOptions.length === 0) {
+    return {};
+  }
+
+  // Return as JAVA_TOOL_OPTIONS environment variable
+  return {
+    JAVA_TOOL_OPTIONS: javaToolOptions.join(' ')
+  };
 }
 
 /**
@@ -173,17 +219,26 @@ export function getProxyAgent(): HttpsProxyAgent<string> | undefined {
     return undefined;
   }
 
-  // Build proxy URL
-  let proxyUrl = `${config.protocol}://`;
-  if (config.username && config.password) {
-    proxyUrl += `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@`;
-  }
-  proxyUrl += `${config.host}:${config.port}`;
+  // Use cached proxy URL if available, otherwise reconstruct
+  const proxyUrl = config.proxyUrl || buildProxyUrl(config);
 
   // Create HTTPS proxy agent with SSL configuration
   return new HttpsProxyAgent(proxyUrl, {
     rejectUnauthorized: config.strictSSL
   });
+}
+
+/**
+ * Builds a proxy URL from ProxyConfig components.
+ * Used as fallback when cached proxyUrl is not available.
+ */
+function buildProxyUrl(config: ProxyConfig): string {
+  let url = `${config.protocol}://`;
+  if (config.username && config.password) {
+    url += `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@`;
+  }
+  url += `${config.host}:${config.port}`;
+  return url;
 }
 
 /**

@@ -18,5 +18,8 @@
   "sonarlint.output.showAnalyzerLogs": true,
   "sonarlint.output.showVerboseLogs": true,
   "sonarlint.analysisExcludesStandalone": "**/myTestFolder/**",
+  "http.proxySupport": "override",
+  "http.proxy": "",
+  "http.noProxy": [],
   "sonarlint.connectedMode.connections.sonarqube": []
 }

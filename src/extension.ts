@@ -116,9 +116,9 @@ const currentProgress: Record<string, { progress: VSCode.Progress<{ increment?: 
 async function runJavaServer(context: VSCode.ExtensionContext): Promise<StreamInfo> {
   try {
     const requirements = await resolveRequirements(context);
-    const { command, args } = await languageServerCommand(context, requirements);
+    const { command, args, options } = await languageServerCommand(context, requirements);
     logToSonarLintOutput(`Executing ${command} ${args.join(' ')}`);
-    const process = ChildProcess.spawn(command, args);
+    const process = ChildProcess.spawn(command, args, options);
     process.stderr.on('data', function (data) {
       logWithPrefix(data, '[stderr]');
     });

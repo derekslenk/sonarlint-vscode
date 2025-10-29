@@ -7,6 +7,7 @@
 'use strict';
 
 import * as fs from 'fs';
+import * as https from 'https';
 import { DateTime } from 'luxon';
 import * as openpgp from 'openpgp';
 import * as path from 'path';
@@ -15,6 +16,7 @@ import * as vscode from 'vscode';
 import { MonitoringService } from '../monitoring/monitoring';
 import * as util from '../util/util';
 import { logToSonarLintOutput } from '../util/logging';
+import { getProxyAgent } from '../util/proxy';
 
 // Comparing a `DateTime` in the past with `diffNow` returns a negative number
 const PLUGIN_MAX_AGE_MONTHS = -2;
@@ -56,23 +58,56 @@ async function startDownloadAsync(onDemandAnalyzersPath: string, expectedVersion
       fetchAbort.abort(errorMessage);
     });
     const url = `https://binaries.sonarsource.com/CommercialDistribution/${CFAMILY_PLUGIN_ID}/${CFAMILY_PLUGIN_ID}-${expectedVersion}.jar`;
-    let fetchResult: Response;
-    try {
-      // On user cancel, AbortController.abort will throw an exception
-      fetchResult = await fetch(url, {
-        signal: fetchAbort.signal
-      });
-      if (! fetchResult?.ok) {
-        errorMessage = fetchResult.statusText;
-        return false;
-      }
-    } catch (err) {
-      errorMessage = err.message;
-      return false;
+
+    // Configure proxy agent if proxy settings are configured
+    const proxyAgent = getProxyAgent();
+    const requestOptions: any = {};
+    if (proxyAgent) {
+      requestOptions.agent = proxyAgent;
     }
 
-    fs.mkdirSync(destinationDir, { recursive: true });
-    fs.writeFileSync(jarPath, Buffer.from(await fetchResult.arrayBuffer()));
+    try {
+      // Download JAR file with proxy support
+      await new Promise<void>((resolve, reject) => {
+        // On user cancel, AbortController.abort will throw an exception
+        fetchAbort.signal.addEventListener('abort', () => {
+          reject(new Error(fetchAbort.signal.reason || 'Download aborted'));
+        });
+
+        https.get(url, requestOptions, res => {
+          if (res.statusCode !== 200) {
+            errorMessage = res.statusMessage || `HTTP ${res.statusCode}`;
+            reject(new Error(errorMessage));
+            return;
+          }
+
+          fs.mkdirSync(destinationDir, { recursive: true });
+          const fileStream = fs.createWriteStream(jarPath);
+          res.pipe(fileStream);
+
+          fileStream.on('finish', () => {
+            fileStream.close();
+            resolve();
+          });
+
+          fileStream.on('error', err => {
+            reject(err);
+          });
+        }).on('error', err => {
+          // Handle proxy authentication failures and connection errors
+          if (err.message && err.message.includes('Proxy')) {
+            errorMessage = `Failed to download C/C++ analyzer through proxy: ${err.message}. ` +
+              'Please check your proxy configuration in VS Code settings (http.proxy).';
+          } else {
+            errorMessage = err.message;
+          }
+          reject(err);
+        });
+      });
+    } catch (err) {
+      errorMessage = errorMessage || err.message;
+      return false;
+    }
 
     progress.report({
       message: `Checking signature`
