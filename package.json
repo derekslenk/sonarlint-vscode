@@ -1289,7 +1289,7 @@
       }
     ]
   },
-  "main": "./dist/extension",
+  "main": "out/src/extension",
   "scripts": {
     "vscode:prepublish": "node build-sonarlint/prepare.mjs && webpack --mode production",
     "compile": "tsc -p ./",
@@ -1319,16 +1319,15 @@
     "highlight.js": "^11.7.0",
     "inly": "^5.0.1",
     "luxon": "^3.2.1",
-    "openpgp": "^6.1.1",
     "node-html-parser": "^6.1.5",
+    "openpgp": "^6.1.1",
     "path-exists": "4.0.0",
     "properties": "1.2.1",
     "sinon": "^19.0.2",
     "supports-color": "^9.4.0",
     "tar": "^7.4.3",
     "underscore": "^1.13.6",
-    "vscode-languageclient": "^9.0.1",
-    "zlib": "^1.0.5"
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@cyclonedx/cyclonedx-npm": "2.0.0",
@@ -1339,7 +1338,8 @@
     "@types/luxon": "^3.2.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.9.3",
-    "@types/vscode": "^1.73.1",
+    "@types/vscode": "^1.85.0",
+    "vscode-languageserver-types": "^3.17.5",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.0",
     "chai": "^4.3.10",

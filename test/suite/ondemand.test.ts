@@ -41,7 +41,13 @@ suite('On demand analyzer download and cleanup', () => {
     expect(fs.existsSync(cFamily662PluginFolder)).to.be.true;
   })
 
-  test('Should log error and fail on invalid signature', async () => {
+  test('Should log error and fail on invalid signature', async function() {
+    const signatureFile = path.resolve(util.extensionPath, 'analyzers', 'sonarcfamily.jar.asc');
+
+    if (!fs.existsSync(signatureFile)) {
+      this.skip(); // Skip test if signature file not available (requires Artifactory credentials)
+      return;
+    }
 
     // Create a bogus CFamily analyzer Jar
     const notCFamily662Jar = path.resolve(cFamily662PluginFolder, 'sonarcfamily.jar');
